@@ -436,6 +436,22 @@ export const reportGripDataSchema = z.object({
   ).optional().default(0),
 }).strict();
 
+// ── Escort Wallet schemas ──────────────────────────────────────────────
+
+export const issueCredentialSchema = z.object({
+  subject: z.string().regex(/^0x[a-fA-F0-9]+$/, 'Subject must be a 0x Ethereum address'),
+  credentialType: z.string().min(1, 'Credential type is required'),
+  schema: z.record(z.any()).refine((val) => typeof val === 'object' && val !== null && !Array.isArray(val), {
+    message: 'Schema must be a valid JSON object',
+  }),
+  validUntil: z.number().int().nonnegative('validUntil must be a non-negative unix timestamp').optional(),
+}).strict();
+
+export const convoyHandshakeSchema = z.object({
+  escorts: z.array(z.string().regex(/^0x[a-fA-F0-9]+$/, 'Each escort must be a 0x Ethereum address'))
+    .min(1, 'Escorts must be a non-empty array of addresses'),
+}).strict();
+
 /**
  * Schema for POST /api/driver/weigh-stations/sync-weight.
  * NOTE: defined once above (truck_id + string axle position); the driver
