@@ -133,19 +133,6 @@ import { predictDriverProfit } from '../services/ml.js';
 import { authenticate } from '../middleware/auth.js';
 import { requireApiKey } from '../middleware/apiKey.js';
 import { requirePolicy } from '../middleware/requirePolicy.js';
-import {
-  DEADHEAD_COLUMNS,
-  DEADHEAD_MAX_ROWS,
-  EARNINGS_MAX_ROWS,
-  EARNINGS_TRIP_COLUMNS,
-  buildWeeklyChart,
-  countDeadheadTripsSaved,
-  getDeadheadCutoff,
-  getEarningsCutoff,
-  sumDistanceKm,
-  sumEarnings,
-  toDateKey,
-} from '../services/driver/earningsReportService.js';
 import { userLimiter } from '../middleware/rateLimiter.js';
 import { checkBypassEligibility, syncAndTransmitInternalWeights } from '../services/weighStationService.js';
 import { isPayoutProviderConfigured } from '../services/wallet/payoutProvider.js';
@@ -687,6 +674,13 @@ async function handleGetDriverEarnings(req, res) {
   try {
     const driverId = req.params.driverId || req.user?.id;
     const period = (req.query.period || 'week').toLowerCase();
+
+    // IDOR guard: a driver may only view their own earnings; admins may view
+    // any driver's. The self-service /earnings route has no param, so it is
+    // always scoped to req.user.id and never blocked here.
+    if (req.user && req.user.role !== 'admin' && driverId !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied. You can only view your own earnings.' });
+    }
 
     const now = new Date();
     let startDate = new Date(now);
@@ -1895,107 +1889,6 @@ router.get('/ltl/optimize-route', authenticate, userLimiter, requireDriverRole, 
     res.json({ optimized_route: optimizedTasks });
   } catch (err) {
     logger.error(`[LTL Route] Error optimizing route for driver ${req.user.id}: ${err.message}`);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
-});
-
-// ============================================================================
-// GET DRIVER ANALYTICS & EARNINGS
-// ============================================================================
-router.get('/:id/earnings', authenticate, userLimiter, requirePolicy('driver:view-earnings'), validateParams(paramIdSchema), async (req, res) => {
-  const { id } = req.params;
-  const period = req.query.period || 'week';
-
-  if (req.user.role !== 'admin' && req.user.id !== id) {
-    return res.status(403).json({ error: 'Access denied. You can only view your own earnings.' });
-  }
-
-  try {
-    const cutoff = getEarningsCutoff(period);
-    if (!cutoff) {
-      return res.status(400).json({ error: 'Invalid period. Must be day, week, or month.' });
-    }
-
-    // The deadhead scan only compares a trip to its immediate predecessor
-    // within DEADHEAD_MAX_GAP_DAYS, so it needs the reporting window extended
-    // backwards by that gap — not the driver's entire trip history.
-    const deadheadCutoff = getDeadheadCutoff(cutoff);
-
-    // None of these three queries depends on another's result, so they run
-    // concurrently rather than stacking three round trips of latency.
-    const [tripsResult, lifetimeResult, adjacentResult] = await Promise.all([
-      supabase
-        .from('trips')
-        .select(EARNINGS_TRIP_COLUMNS)
-        .eq('driver_id', id)
-        .eq('status', 'completed')
-        .gte('trip_date', toDateKey(cutoff))
-        .order('trip_date', { ascending: false })
-        .limit(EARNINGS_MAX_ROWS),
-      supabase
-        .from('trips')
-        .select('*', { count: 'exact', head: true })
-        .eq('driver_id', id)
-        .eq('status', 'completed'),
-      supabase
-        .from('trips')
-        .select(DEADHEAD_COLUMNS)
-        .eq('driver_id', id)
-        .eq('status', 'completed')
-        .gte('trip_date', toDateKey(deadheadCutoff))
-        .order('trip_date', { ascending: true })
-        .limit(DEADHEAD_MAX_ROWS),
-    ]);
-
-    const { data: trips, error: tripsError } = tripsResult;
-    if (tripsError) {
-      return res.status(500).json({ error: 'Failed to fetch trips.', details: tripsError.message });
-    }
-
-    const { count: lifetimeTrips, error: countError } = lifetimeResult;
-    if (countError) {
-      logger.warn('Failed to fetch lifetime trips count:', countError.message);
-    }
-
-    // Non-fatal: the deadhead figure degrades to 0 rather than failing the
-    // whole report, matching how the lifetime count is treated above.
-    const { data: adjacentTrips, error: adjacentError } = adjacentResult;
-    if (adjacentError) {
-      logger.warn('Failed to fetch trips for deadhead analysis:', adjacentError.message);
-    }
-
-    const weeklyChart = buildWeeklyChart(trips, { period });
-    const totalKm = sumDistanceKm(trips);
-    const deadheadTripsSaved = countDeadheadTripsSaved(adjacentTrips);
-
-    const { gross: grossEarnings, net: totalNetEarnings } = sumEarnings(trips);
-
-    res.json({
-      period,
-      gross_earnings: grossEarnings,
-      net_earnings: totalNetEarnings,
-      trips_completed: trips.length,
-      weekly_chart: weeklyChart,
-      trips: trips.map(t => ({
-        trip_display_id: t.trip_display_id,
-        route_label: t.route_label,
-        gross_earnings: t.total_earnings,
-        estimated_fuel_cost: t.fuel_deducted,
-        net_earnings: t.net_earnings,
-        blockchain_hash: t.blockchain_hash,
-        receipt_link: t.blockchain_hash ? `https://polygonscan.com/tx/${t.blockchain_hash}` : null,
-        trip_date: t.trip_date
-      })),
-      cumulative_stats: {
-        total_km: totalKm,
-        avg_earning_per_km: totalKm > 0 ? totalNetEarnings / totalKm : 0,
-        lifetime_trips: lifetimeTrips || 0
-      },
-      deadhead_trips_saved: deadheadTripsSaved
-    });
-
-  } catch (err) {
-    logger.error('Driver analytics fetch error:', err);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
