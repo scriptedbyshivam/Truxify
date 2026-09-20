@@ -52,20 +52,6 @@ class WebRTCSignalingServer {
       }
 
       const peerId = this.generatePeerId();
-      // Security fix #4973: Do not allow clients to specify arbitrary meshId directly from query params
-      // Derive or generate a secure server-side meshId
-      // Reuse authorized mesh for the same authenticated user if already active, otherwise create securely
-      let meshId = null;
-      for (const [existingPeerId, peer] of this.peers.entries()) {
-        if (peer.userId === decoded.id && peer.meshId && this.meshes.has(peer.meshId)) {
-          meshId = peer.meshId;
-          break;
-        }
-      }
-      if (!meshId) {
-        meshId = this.getOrCreateMesh();
-      }
-      const peerId = this.generatePeerId();
 
       // Security fix #4973 & CodeRabbit: Prevent arbitrary client meshId and reuse authorized active mesh
       let meshId = null;
