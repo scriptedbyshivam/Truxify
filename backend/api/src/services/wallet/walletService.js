@@ -1,5 +1,5 @@
 ﻿import { ethers } from 'ethers';
-import DomainError from '../order/domainError.js';
+import { DomainError } from '../order/domainError.js';
 import logger from '../../middleware/logger.js';
 
 /**
@@ -11,14 +11,14 @@ export async function validateWalletAddress(walletAddress) {
         throw new DomainError(400, { error: 'Wallet address is required and must be a valid string.' });
     }
     if (!ethers.isAddress(walletAddress)) {
-        throw new DomainError(400, { error: Invalid Ethereum/Polygon wallet address format: "". });
+        throw new DomainError(400, { error: `Invalid Ethereum/Polygon wallet address format: "${walletAddress}".` });
     }
     return walletAddress;
 }
 
 export async function getWalletDetails(walletAddress) {
     const validatedAddress = await validateWalletAddress(walletAddress);
-    logger.info([WalletService] Fetching details for wallet: );
+    logger.info(`[WalletService] Fetching details for wallet: ${validatedAddress}`);
     
     // Core wallet lookup logic placeholder
     return {
