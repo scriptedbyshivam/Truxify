@@ -195,6 +195,15 @@ describe('OrderLifecycleService.cancelOrder (transactional outbox)', () => {
 
     await expect(service.cancelOrder('ord-1', 'cust-1', 'why')).rejects.toMatchObject({ status: 500 });
   });
+  it('rejects null or undefined orderId when updating milestone', async () => {
+    await expect(
+        service.updateMilestone(null, 'In Transit', 'driver-1')
+    ).rejects.toThrow('orderId is required.');
+
+    await expect(
+        service.updateMilestone(undefined, 'In Transit', 'driver-1')
+    ).rejects.toThrow('orderId is required.');
+});
 });
 
 describe('OrderLifecycleService.getOrderHistory', () => {
