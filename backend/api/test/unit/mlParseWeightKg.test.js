@@ -28,10 +28,10 @@ describe('parseWeightKg', () => {
     expect(parseWeightKg('1.5 t')).toBe(1500);
   });
 
-  it('returns NaN for unparseable strings', () => {
-    expect(Number.isNaN(parseWeightKg('abc'))).toBe(true);
-    expect(Number.isNaN(parseWeightKg(''))).toBe(true);
-    expect(Number.isNaN(parseWeightKg('kg'))).toBe(true);
+  it('returns null for unparseable strings', () => {
+    expect(parseWeightKg('abc')).toBeNull();
+    expect(parseWeightKg('')).toBeNull();
+    expect(parseWeightKg('kg')).toBeNull();
   });
 
   it('coerces null like Number and returns NaN for undefined', () => {
@@ -39,9 +39,9 @@ describe('parseWeightKg', () => {
     expect(Number.isNaN(parseWeightKg(undefined))).toBe(true);
   });
 
-  it('returns NaN for non-finite numbers', () => {
-    expect(Number.isNaN(parseWeightKg(NaN))).toBe(true);
-    expect(Number.isNaN(parseWeightKg(Infinity))).toBe(true);
+  it('returns null for non-finite numbers', () => {
+    expect(parseWeightKg(NaN)).toBeNull();
+    expect(parseWeightKg(Infinity)).toBeNull();
   });
 
   it('coerces arrays like Number and returns NaN for objects', () => {
