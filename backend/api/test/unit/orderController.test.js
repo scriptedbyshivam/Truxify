@@ -1,37 +1,58 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('../../../../src/config/db.js', () => ({
-  supabaseAdmin: { from: vi.fn(() => ({ select: vi.fn(() => Promise.resolve({ data: null, error: null })) })) },
-  supabase: { from: vi.fn(() => ({ select: vi.fn(() => Promise.resolve({ data: [], error: null })) })) },
+vi.mock('../../src/config/db.js', () => ({
+  supabase: { from: vi.fn() },
+  mongoDb: {},
 }));
 
-vi.mock('../../../../src/middleware/logger.js', () => ({
-  default: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
-}));
-
-vi.mock('../../../../src/utils/apiResponse.js', () => ({
-  success: vi.fn((res, data) => res),
-  error: vi.fn((res, msg, code) => res),
-}));
-
-vi.mock('mongoose', () => ({
-  default: {
-    Schema: class {
-      constructor(fields, opts) {
-        this.fields = fields;
-        this.opts = opts;
-      }
-    },
-    model: vi.fn((name, schema) => ({ name, schema })),
-    models: {},
-    Types: { ObjectId: class {} },
+vi.mock('../../src/repositories/orderRepository.js', () => ({
+  OrderRepository: class {
+    constructor() {}
   },
 }));
 
-import * as orderController from '../../../../src/controllers/orderController.js';
+vi.mock('../../src/services/order/bidAcceptanceService.js', () => ({
+  BidAcceptanceService: class {},
+  DomainError: class DomainError extends Error {},
+}));
 
-describe('orderController', () => {
-  it('has expected functions exported', () => {
-    expect(typeof orderController).toBe('object');
+vi.mock('../../src/services/order/orderTimelineService.js', () => ({
+  OrderTimelineService: class {},
+}));
+
+vi.mock('../../src/services/order/orderLifecycleService.js', () => ({
+  OrderLifecycleService: class {},
+}));
+
+vi.mock('../../src/services/order/orderValidationService.js', () => ({
+  OrderValidationService: class {},
+}));
+
+vi.mock('../../src/services/escrow.js', () => ({
+  buildDepositTx: vi.fn(),
+  recordDepositTx: vi.fn(),
+  submitEscrowRefund: vi.fn(),
+  escrowRefund: vi.fn(),
+}));
+
+vi.mock('../../src/services/ml.js', () => ({
+  predictDemand: vi.fn(),
+}));
+
+vi.mock('../../src/services/osrm.js', () => ({
+  buildStraightLineGeometry: vi.fn(),
+  getRouteGeometry: vi.fn(),
+}));
+
+vi.mock('../../src/middleware/logger.js', () => ({
+  default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+
+const orderController = await import('../../src/controllers/orderController.js');
+
+describe('order controller exports', () => {
+  it('exposes createOrder and getActiveOrders', () => {
+    expect(typeof orderController.createOrder).toBe('function');
+    expect(typeof orderController.getActiveOrders).toBe('function');
   });
 });
