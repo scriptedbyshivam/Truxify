@@ -1,4 +1,4 @@
-﻿import axios from 'axios';
+import axios from 'axios';
 import crypto from 'crypto';
 import { ethers } from 'ethers';
 import { supabase, supabaseAdmin } from '../config/db.js';
@@ -144,6 +144,8 @@ class DigilockerService {
       return { success: false, error: 'DigiLocker verification is not configured', is_digilocker_verified: false };
     }
     logger.info(`[DigilockerService] Verifying documents for user ${userId} with token ${accessToken}`);
+
+
 
     const dlData = {
       doc_type: 'driving_licence',
@@ -400,16 +402,30 @@ class DigilockerService {
         error: syncErrors.join('; '),
         syncedDocumentsCount: syncResults.length,
         documents: syncResults,
-        isMock
+        isMock,
+        is_digilocker_verified: false,
       };
+    }
+
+    if (syncResults.length > 0) {
+      const { error: profileUpdateErr } = await supabaseAdmin
+        .from('profiles')
+        .update({ is_digilocker_verified: true })
+        .eq('id', driverId);
+
+      if (profileUpdateErr) {
+        logger.error(`[DigilockerService] Failed to update profile is_digilocker_verified for ${driverId}:`, profileUpdateErr.message);
+      }
     }
 
     return {
       success: true,
       syncedDocumentsCount: syncResults.length,
       documents: syncResults,
-      isMock
+      isMock,
+      is_digilocker_verified: syncResults.length > 0,
     };
+
   }
 }
 

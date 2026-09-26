@@ -1,4 +1,3 @@
-import { ethers } from 'ethers';
 import logger from '../middleware/logger.js';
 import { ValidationError } from '../utils/errors.js';
 

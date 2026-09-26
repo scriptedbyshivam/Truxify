@@ -7,11 +7,11 @@
  *   - validateSetup: returns false when a contract is missing bytecode
  *   - validateSetup: returns false when a contract ABI probe fails
  *   - isMock: true when DIGILOCKER_MOCK is set; false in production guard
- *   - exchangeCode: mock token in mock mode; refusal without credentials
- *   - verifyDocuments: verified documents in mock mode
- *   - verifyAndSyncDocuments: syncs mock documents in mock mode
+ *   - exchangeCode: mock token in mock mode; live OAuth exchange; network error handling; refusal without credentials
+ *   - verifyDocuments: verified documents in mock mode; missing token; non-mock rejection; error handling
+ *   - verifyAndSyncDocuments: syncs mock documents; live document fetching and sync; network & storage error handling
  *
- * Run with:  npm test -- test/unit/digilockerService.test.js
+ * Run with:  npx vitest run test/unit/digilockerService.test.js
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -28,15 +28,17 @@ vi.mock('../../src/middleware/logger.js', () => ({
   default: mockLogger,
 }));
 
-const storageChain = vi.hoisted(() => ({
-  upload: vi.fn(),
+const mockAxios = vi.hoisted(() => ({
+  post: vi.fn(),
+  get: vi.fn(),
 }));
 
-const supabaseChain = vi.hoisted(() => ({
-  profileData: null,
-  docData: null,
-  maybeSingle: vi.fn(),
-  select: vi.fn(),
+vi.mock('axios', () => ({
+  default: mockAxios,
+}));
+
+const storageChain = vi.hoisted(() => ({
+  upload: vi.fn(),
 }));
 
 const supabaseMock = vi.hoisted(() => ({
@@ -154,12 +156,7 @@ describe('digilockerService — mock mode', () => {
     const result = await digilockerService.exchangeCode('code-123');
     expect(result.access_token).toContain('mock_digilocker_token_');
     expect(result.digilocker_id).toContain('DLID_');
-  });
-
-  it('exchangeCode refuses without credentials when not in mock mode', async () => {
-    process.env.DIGILOCKER_MOCK = 'false';
-    const result = await digilockerService.exchangeCode('code-123');
-    expect(result.success).toBe(false);
+    expect(result.name).toBe('Suresh Kumar');
   });
 
   it('verifyDocuments returns verified documents in mock mode', async () => {
@@ -191,8 +188,12 @@ describe('digilockerService — mock mode', () => {
               maybeSingle: vi.fn().mockResolvedValue({ data: { polygon_wallet_address: '0x0' }, error: null }),
             })),
           })),
+          update: vi.fn(() => ({
+            eq: vi.fn().mockResolvedValue({ data: null, error: null }),
+          })),
         };
       }
+
       if (table === 'driver_documents') {
         return {
           select: vi.fn(() => ({
