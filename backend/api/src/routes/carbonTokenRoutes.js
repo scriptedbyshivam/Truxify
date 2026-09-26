@@ -6,6 +6,17 @@ import { userLimiter } from '../middleware/rateLimiter.js';
 const router = express.Router();
 
 /**
+ * Validation failures are client errors (400), not server faults (500).
+ */
+function statusForError(err) {
+  return Number.isInteger(err?.statusCode) ? err.statusCode : 500;
+}
+
+function errorMessage(err, fallback) {
+  return err.statusCode === 400 ? err.message : fallback;
+}
+
+/**
  * POST /api/carbon-credits/mint
  * Calculates carbon savings from telematics & mints cross-chain carbon tokens
  */
@@ -13,16 +24,19 @@ router.post('/mint', authenticate, userLimiter, async (req, res) => {
   try {
     const { truck_id, trip_id, distance_km, fuel_saved_liters, load_weight_kg } = req.body;
 
-    if (!truck_id || !trip_id || fuel_saved_liters === undefined) {
+    if (!truck_id || !trip_id || fuel_saved_liters === undefined || fuel_saved_liters === null) {
       return res.status(400).json({ error: 'Missing required parameters: truck_id, trip_id, fuel_saved_liters' });
     }
 
+    // Pass the raw values through: the service owns the numeric contract, so
+    // 'abc' and -100 are rejected there instead of being coerced to NaN and
+    // persisted as a minted credit.
     const token = await carbonTokenService.calculateAndMintCarbonCredits({
       truckId: truck_id,
       tripId: trip_id,
-      distanceKm: Number(distance_km || 0),
-      fuelSavedLiters: Number(fuel_saved_liters),
-      loadWeightKg: Number(load_weight_kg || 0)
+      distanceKm: distance_km,
+      fuelSavedLiters: fuel_saved_liters,
+      loadWeightKg: load_weight_kg
     });
 
     return res.status(201).json({
@@ -30,7 +44,9 @@ router.post('/mint', authenticate, userLimiter, async (req, res) => {
       token
     });
   } catch (err) {
-    return res.status(500).json({ error: err.message || 'Failed to mint carbon credit tokens' });
+    return res.status(statusForError(err)).json({
+      error: errorMessage(err, 'Failed to mint carbon credit tokens')
+    });
   }
 });
 
@@ -57,7 +73,9 @@ router.post('/purchase', authenticate, userLimiter, async (req, res) => {
       token: redeemedToken
     });
   } catch (err) {
-    return res.status(500).json({ error: err.message || 'Failed to purchase carbon credit tokens' });
+    return res.status(statusForError(err)).json({
+      error: errorMessage(err, 'Failed to purchase carbon credit tokens')
+    });
   }
 });
 
