@@ -5,25 +5,10 @@ import { redisClient } from "../config/db.js";
 import crypto from "crypto";
 import logger from "./logger.js";
 import { checkRateLimit } from "../utils/redisSlidingWindow.js";
-// backend/api/src/middleware/rateLimiter.js (Excerpt)
-
-// ❌ Removed duplicate named function declaration at line 138:
-// function sentryAlertHandler(req, res, next) { ... }
-
-// ✅ Retained const arrow function version used across rate limiter handlers:
-export const sentryAlertHandler = (req, res, next) => {
-  // Sentry alert reporting logic for rate limit triggers
-  if (res.statusCode === 429) {
-    // Capture rate limit event
-  }
-  next();
-};
 function isRedisReady() {
   return !!(redisClient && redisClient.status === "ready");
 }
 // backend/api/src/middleware/rateLimiter.js
-
-import rateLimit from 'express-rate-limit';
 
 /**
  * Standard API rate limiter for general authenticated endpoints.
@@ -767,7 +752,7 @@ export const telemetryLimiter = rateLimit({
 });
 
 /**
- * Factory that creates a DeferredRedisStore — used by both the built-in
+ * Factory that creates a DeferredRedisStore ΓÇö used by both the built-in
  * limiters in this module and by route-level limiters (orderRoutes,
  * driverRoutes) that need Redis-backed shared state across instances.
  */
