@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
+/// @title Truxify Escrow
+/// @notice Relayer-operated booking escrow with a customer/driver dispute
+///         window. A relayer funds and settles bookings; either counterparty
+///         can raise a dispute, and the customer may claim a timeout refund if
+///         the dispute is not resolved within DISPUTE_TIMELOCK.
 contract Escrow {
     enum EscrowStatus {
         None,
@@ -14,66 +19,12 @@ contract Escrow {
         address payable driver;
         uint256 amount;
         EscrowStatus status;
-    }
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
-
-contract Escrow {
-    struct EscrowDetails {
-        address customer;
-        address driver;
-        uint256 amount;
         bool isDisputed;
         uint256 disputeTimestamp;
-        bool isResolved;
     }
 
-    // 7-day timeout window for admin/relayer dispute resolution
+    // 7-day timeout window for admin/relayer dispute resolution.
     uint256 public constant DISPUTE_TIMELOCK = 7 days;
-
-    mapping(bytes32 => EscrowDetails) public escrows;
-
-    event DisputeRaised(bytes32 indexed bookingId, address indexed raisedBy, uint256 timestamp);
-    event DisputeTimeoutRefunded(bytes32 indexed bookingId, address indexed customer, uint256 amount);
-    event DisputeResolved(bytes32 indexed bookingId, address indexed winner, uint256 amount);
-
-    /**
-     * @notice Raises a dispute on an active escrow booking
-     */
-    function raiseDispute(bytes32 bookingId) external {
-        EscrowDetails storage escrow = escrows[bookingId];
-        require(msg.sender == escrow.customer || msg.sender == escrow.driver, "Unauthorized");
-        require(!escrow.isResolved, "Escrow already resolved");
-        require(!escrow.isDisputed, "Dispute already active");
-
-        escrow.isDisputed = true;
-        escrow.disputeTimestamp = block.timestamp;
-
-        emit DisputeRaised(bookingId, msg.sender, block.timestamp);
-    }
-
-    /**
-     * @notice Allows customer to claim a refund if the relayer fails to resolve the dispute within the timelock window
-     */
-    function refundAfterDisputeTimeout(bytes32 bookingId) external {
-        EscrowDetails storage escrow = escrows[bookingId];
-        require(escrow.isDisputed, "Escrow is not in dispute");
-        require(!escrow.isResolved, "Escrow already resolved");
-        require(block.timestamp > escrow.disputeTimestamp + DISPUTE_TIMELOCK, "Dispute timelock has not expired");
-        require(msg.sender == escrow.customer, "Only customer can claim timeout refund");
-
-        escrow.isResolved = true;
-        escrow.isDisputed = false;
-
-        uint256 refundAmount = escrow.amount;
-        escrow.amount = 0;
-
-        (bool success, ) = payable(escrow.customer).call{value: refundAmount}("");
-        require(success, "ETH transfer failed");
-
-        emit DisputeTimeoutRefunded(bookingId, escrow.customer, refundAmount);
-    }
-}
 
     address public owner;
     mapping(address => bool) public authorizedRelayers;
@@ -84,6 +35,8 @@ contract Escrow {
     event Deposited(bytes32 indexed bookingId, address indexed customer, address indexed driver, uint256 amount);
     event Released(bytes32 indexed bookingId, address indexed driver, uint256 amount);
     event Refunded(bytes32 indexed bookingId, address indexed customer, uint256 amount);
+    event DisputeRaised(bytes32 indexed bookingId, address indexed raisedBy, uint256 timestamp);
+    event DisputeTimeoutRefunded(bytes32 indexed bookingId, address indexed customer, uint256 amount);
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Only owner");
@@ -131,10 +84,46 @@ contract Escrow {
             customer: customer,
             driver: driver,
             amount: msg.value,
-            status: EscrowStatus.Funded
+            status: EscrowStatus.Funded,
+            isDisputed: false,
+            disputeTimestamp: 0
         });
 
         emit Deposited(bookingId, customer, driver, msg.value);
+    }
+
+    /// @notice Raises a dispute on a funded escrow. Callable by the customer or
+    ///         the driver only.
+    function raiseDispute(bytes32 bookingId) external {
+        BookingEscrow storage booking = escrows[bookingId];
+        require(msg.sender == booking.customer || msg.sender == booking.driver, "Unauthorized");
+        require(booking.status == EscrowStatus.Funded, "Escrow not funded");
+        require(!booking.isDisputed, "Dispute already active");
+
+        booking.isDisputed = true;
+        booking.disputeTimestamp = block.timestamp;
+
+        emit DisputeRaised(bookingId, msg.sender, block.timestamp);
+    }
+
+    /// @notice Lets the customer claim a refund if the relayer does not resolve
+    ///         a dispute within DISPUTE_TIMELOCK.
+    function refundAfterDisputeTimeout(bytes32 bookingId) external nonReentrant {
+        BookingEscrow storage booking = escrows[bookingId];
+        require(booking.isDisputed, "Escrow is not in dispute");
+        require(booking.status == EscrowStatus.Funded, "Escrow not funded");
+        require(block.timestamp > booking.disputeTimestamp + DISPUTE_TIMELOCK, "Dispute timelock has not expired");
+        require(msg.sender == booking.customer, "Only customer can claim timeout refund");
+
+        booking.status = EscrowStatus.Refunded;
+        booking.isDisputed = false;
+        uint256 amount = booking.amount;
+        booking.amount = 0;
+
+        (bool sent, ) = booking.customer.call{value: amount}("");
+        require(sent, "Customer refund failed");
+
+        emit DisputeTimeoutRefunded(bookingId, booking.customer, amount);
     }
 
     function releaseFunds(bytes32 bookingId) external onlyRelayer nonReentrant {
