@@ -9,7 +9,6 @@ import '../core/api_client.dart';
 import '../core/offline/cache/cache_manager.dart';
 import '../repositories/address_repository.dart';
 import '../repositories/payment_repository.dart';
-import '../services/auth_service.dart';
 import '../services/profile_service.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/language_provider.dart';
